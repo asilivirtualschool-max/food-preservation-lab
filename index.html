@@ -333,6 +333,41 @@ ul.pts{margin:8px 0;padding-left:20px}ul.pts li{margin:5px 0}
 .support-card>summary{background:var(--support-soft);color:var(--support)}
 :root[data-theme=dark] .support-card>summary{color:var(--support)}
 .support-card>summary::before{color:var(--support)}
+/* ---------- VTR table guidance ---------- */
+.vtr-guide{border:1.5px solid var(--teal);border-radius:14px;padding:12px 15px;margin:4px 0 12px;background:var(--good-soft)}
+.vtr-title{font-weight:800;color:var(--teal);margin-bottom:8px}
+table.vtr th{background:var(--teal)}
+/* ---------- push task / offer / badge ---------- */
+.push-box{border:2px solid var(--push);border-radius:14px;padding:12px 15px;margin:10px 0;background:var(--push-soft)}
+.push-lab{font-weight:800;color:var(--push);margin-bottom:4px}
+.push-offer{display:flex;gap:12px;align-items:center;flex-wrap:wrap;border:2px dashed var(--push);border-radius:14px;padding:13px 15px;margin:12px 0;background:var(--card)}
+.push-offer>div{flex:1;min-width:200px;font-size:.95rem}
+/* ---------- teacher analytics ---------- */
+.an-panel{margin-top:16px;border:1.5px solid var(--line);border-radius:16px;overflow:hidden;background:var(--card)}
+.an-head{background:var(--navy);color:#fff;font-weight:700;padding:11px 15px}
+.an-row{display:grid;grid-template-columns:1.1fr 1fr 2fr;gap:10px;padding:10px 15px;border-top:1px solid var(--line);font-size:.9rem;align-items:center}
+@media(max-width:640px){.an-row{grid-template-columns:1fr}}
+.an-name{font-weight:700;color:var(--navy)}:root[data-theme=dark] .an-name{color:var(--sky)}
+.an-avg b{color:var(--teal);font-size:1.1rem}
+.teacher-key{margin-top:12px}
+.teacher-key>summary{background:var(--warn-soft);color:var(--warn)}
+.teacher-key>summary::before{color:var(--warn)}
+/* ---------- certificate (food label) ---------- */
+.cert{max-width:420px;margin:10px auto;border:3px solid var(--ink);border-radius:10px;padding:16px 18px;background:#fff;color:#111}
+:root[data-theme=dark] .cert{background:#fff;color:#111}
+.cert-flag{font-weight:900;font-size:1.8rem;letter-spacing:.02em;border-bottom:8px solid #111;padding-bottom:4px;color:#111}
+.cert-name{font-size:1.45rem;font-weight:800;margin-top:8px;color:#111}
+.cert-sub{font-size:.82rem;color:#444;margin-bottom:4px}
+.cert-rule{border-top:1px solid #111;margin:7px 0}.cert-rule.thick{border-top:6px solid #111}
+.cert-line{display:flex;justify-content:space-between;font-size:.92rem;padding:2px 0;color:#111}
+.cert-serv{font-size:.88rem;margin:4px 0;font-weight:700;color:#111}
+.oman-tbl{width:100%;border-collapse:collapse;font-size:.86rem}
+.oman-tbl td{border-bottom:1px solid #ccc;padding:5px 4px;vertical-align:top;color:#111}
+.oman-k{font-weight:900;font-size:1.05rem;width:26px;text-align:center;color:#111}
+.lbl-sub{color:#555;font-size:.78rem}
+.cert-ing{margin:4px 0 4px 18px;font-size:.88rem;color:#111}
+.cert-foot{display:flex;justify-content:space-between;font-size:.78rem;color:#444;margin-top:6px}
+.cert-big{margin-top:10px;font-size:.84rem;font-style:italic;border-top:3px solid #111;padding-top:6px;color:#111}
 </style>
 </head>
 <body>

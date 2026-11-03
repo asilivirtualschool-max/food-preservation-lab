@@ -179,6 +179,17 @@ var TECH_SUPPORT=[
   ["Boiling / Pasteurisation","Uses HEAT to kill microbes already in the food (e.g. milk)."]
 ];
 
+/* ----- PUSH-YOURSELF quiz: pass to earn the Challenge badge (then Go tasks show everywhere) ----- */
+var PUSH_QUIZ=[
+  {q:"Pickling in oil AND vinegar can remove more than one condition. Which TWO does it mainly affect?",
+   multi:true,
+   options:["Air (oxygen)","Light","Nutrients / acidity microbes can't survive","Gravity"],answer:[0,2]},
+  {q:"A food is vacuum-sealed AND frozen. Why might this keep it safe even longer than one method alone?",
+   options:["It looks nicer","Two conditions are removed at once — air AND warmth — so microbes have even less chance to grow","Freezing adds nutrients","Vacuum adds moisture"],answer:1},
+  {q:"Which statement is the best scientific generalisation?",
+   options:["All food lasts forever if frozen","To preserve food you remove or limit at least one condition microbes need (moisture, temperature, air or nutrients)","Salt is the only real preservative","Microbes don't need anything to grow"],answer:1}
+];
+
 /* ----- PROGRESS CHECK (slides 16–18, 23): traffic-light self-check + a station MCQ ----- */
 var PROGRESS={
   traffic:[
@@ -252,7 +263,7 @@ var CARDS={
 var S={role:null,code:null,name:null,studentId:null,tier:'steady',
   stageIndex:0,placed:false,preScore:null,preTotal:0,lowTestFlag:false,stageScores:{},usedGo:false,
   unsub:null,metaUnsub:null,paced:false,releasedIndex:0,waiting:false,pinOk:false,presentIdx:1,
-  answers:{}, picks:{}};
+  answers:{}, picks:{}, badge:false};
 /* answers: { fieldId: textValue | checkboxBool }  (text boxes, ticks)
    picks:   { cls: { qi: [originalOptionIndexes...] } }  (selected MCQ/multi options)
    Both persist across re-renders (e.g. teacher pause/wait) so nothing is retyped. */
@@ -291,8 +302,10 @@ function studentRef(){ return fdb.collection('sessions').doc(S.code).collection(
 function saveStudent(extra){
   if(!fdb||!S.code||!S.studentId) return Promise.resolve();
   var doc={name:S.name,tier:S.tier,preScore:S.preScore,preTotal:S.preTotal,lowTestFlag:!!S.lowTestFlag,
-    stage:STAGES[S.stageIndex],stageIndex:S.stageIndex,usedGo:!!S.usedGo,
-    percent:progressPct(),updated:Date.now()};
+    stage:STAGES[S.stageIndex],stageIndex:S.stageIndex,usedGo:!!S.usedGo,placed:!!S.placed,badge:!!S.badge,
+    percent:progressPct(),updated:Date.now(),
+    // full state for resume + teacher analytics
+    answers:S.answers||{}, picks:S.picks||{}, scores:S.stageScores||{}};
   if(extra) for(var k in extra) doc[k]=extra[k];
   try{ return studentRef().set(doc,{merge:true}).catch(function(){}); }catch(e){ return Promise.resolve(); }
 }
@@ -562,7 +575,7 @@ function paintDashboard(rows){
       '<td>'+(r.lowTestFlag?'<span class="flag warn">low pre-test</span> ':'')+(r.usedGo?'<span class="flag push">go</span>':'')+'</td>'+
       '<td><button class="row-del" data-id="'+esc(r._id||'')+'" data-name="'+esc(r.name||'')+'" title="Remove this entry">✕</button></td></tr>';
   }).join('');
-  el('dashBody').innerHTML='<div class="dash-table-wrap"><table class="dash">'+head+body+'</table></div>';
+  el('dashBody').innerHTML='<div class="dash-table-wrap"><table class="dash">'+head+body+'</table></div>'+analyticsPanel(rows)+teacherStationKey();
   document.querySelectorAll('.row-del').forEach(function(b){
     b.addEventListener('click',function(){
       var id=b.getAttribute('data-id'), nm=b.getAttribute('data-name')||'this student';
@@ -579,6 +592,69 @@ function deleteStudent(studentId, btn){
   fdb.collection('sessions').doc(S.code).collection('students').doc(studentId).delete()
     .then(function(){ /* onSnapshot will refresh the table */ })
     .catch(function(e){ if(btn){ btn.disabled=false; btn.textContent='✕'; } window.alert('Could not remove: '+(e&&e.code||'error')+'. If this keeps happening, the database rules may need to allow deletes.'); });
+}
+
+/* ---- the checks we aggregate, with their class + items ---- */
+function CHECKS(){ return [
+  {name:'Pre-test', cls:'pre-opt', items:PRETEST},
+  {name:'Recall',   cls:'rec-opt', items:RECAP.items},
+  {name:'Apple check', cls:'cfu-opt', items:[CFU]},
+  {name:'Progress MCQ', cls:'pc-opt', items:[PROGRESS.mcq]},
+  {name:'Condition match', cls:'pcm-opt', items:[PROGRESS.match]}
+];}
+function answerSetOf(it){ return it.multi?it.answer.slice():[it.answer]; }
+function picksFor(doc,cls,qi){ var p=doc.picks&&doc.picks[cls]; if(!p) return null; var a=p[qi]; if(a==null) a=p[String(qi)]; return a||null; }
+/* Score one item for one student's picks: 1 / 0 (single) or fraction (multi). null if not attempted. */
+function scoreItem(it,picks){
+  if(!picks||!picks.length) return null;
+  var ans=answerSetOf(it);
+  if(it.multi){ var good=0,bad=0; picks.forEach(function(p){ if(ans.indexOf(p)>=0)good++; else bad++; }); return Math.max(0,good-bad)/ans.length; }
+  return (picks.length===1 && ans.indexOf(picks[0])>=0)?1:0;
+}
+/* Class average + most common wrong option per check, built from stored picks. */
+function analyticsPanel(rows){
+  var checks=CHECKS(), out='';
+  checks.forEach(function(chk){
+    // which students attempted this check at all?
+    var attempted=rows.filter(function(r){ return chk.items.some(function(it,qi){ return picksFor(r,chk.cls, chk.items.length>1?qi:(chk.cls==='pre-opt'||chk.cls==='rec-opt'?qi:'0')); }); });
+    if(!attempted.length) return;
+    // average % across attempted students
+    var totalPct=0, counted=0;
+    attempted.forEach(function(r){
+      var s=0,m=0;
+      chk.items.forEach(function(it,qi){
+        var key=(chk.items.length>1)?qi:'0';
+        var pk=picksFor(r,chk.cls,key);
+        var sc=scoreItem(it,pk); if(sc!=null){ s+=sc; m+=1; }
+      });
+      if(m){ totalPct+=Math.round(s/m*100); counted++; }
+    });
+    var avg=counted?Math.round(totalPct/counted):0;
+    // most common wrong option (across all questions in the check)
+    var wrongCount={};
+    chk.items.forEach(function(it,qi){
+      var key=(chk.items.length>1)?qi:'0';
+      var ans=answerSetOf(it);
+      attempted.forEach(function(r){
+        var pk=picksFor(r,chk.cls,key); if(!pk) return;
+        pk.forEach(function(oi){ if(ans.indexOf(oi)<0){ var label=it.options[oi]; wrongCount[label]=(wrongCount[label]||0)+1; } });
+      });
+    });
+    var topWrong=null,topN=0; for(var w in wrongCount){ if(wrongCount[w]>topN){topN=wrongCount[w];topWrong=w;} }
+    out+='<div class="an-row"><div class="an-name">'+esc(chk.name)+'</div>'+
+      '<div class="an-avg"><b>'+avg+'%</b> avg · '+attempted.length+' attempted</div>'+
+      '<div class="an-wrong">'+(topWrong?('Common wrong: <b>“'+esc(String(topWrong).slice(0,70))+'”</b> ('+topN+')'):'<span class="muted">no wrong answers</span>')+'</div></div>';
+  });
+  if(!out) return '';
+  return '<div class="an-panel"><div class="an-head">📊 Check results — class average &amp; common wrong answer</div>'+out+'</div>';
+}
+/* Teacher-only station answer key (students don't see this). */
+function teacherStationKey(){
+  var rows=STATIONS.stations.map(function(st){
+    return '<tr><td style="font-weight:700">Station '+st.n+'</td><td>'+esc(STATIONS.techniques[st.techIdx])+'</td><td>'+esc(st.factor)+'</td><td>'+esc(st.purpose)+'</td></tr>';
+  }).join('');
+  return '<details class="qa teacher-key"><summary>🔑 Teacher station answer key (not shown to students)</summary>'+
+    '<div class="qa-a" style="overflow-x:auto"><table class="ctable"><tr><th>Station</th><th>Technique (Parts)</th><th>Factor</th><th>Principle (Purpose)</th></tr>'+rows+'</table></div></details>';
 }
 
 /* anonymous projector view */
@@ -701,9 +777,44 @@ function renderJoin(sc){
     btn.disabled=true;btn.textContent='Joining…';
     sessionExists(code).then(function(ex){
       if(fdb&&ex===false){f.className='fb show no';f.textContent='That code isn’t open. Check it with your teacher.';btn.disabled=false;btn.textContent='Start →';return;}
-      S.code=code;S.name=name;S.studentId=makeId();S.stageIndex=0;ensureSession(code);subscribeMeta(code);saveStudent();render();
+      S.code=code;S.name=name;ensureSession(code);subscribeMeta(code);
+      // RESUME: if a student with this name already exists in the class, pick up where they left off.
+      findStudentByName(code,name).then(function(existing){
+        if(existing){
+          S.studentId=existing.id; restoreFromDoc(existing.data);
+          f.className='fb show ok'; f.innerHTML='<b>Welcome back, '+esc(name)+'!</b> Continuing where you left off.';
+          saveStudent(); setTimeout(render,500);
+        } else {
+          S.studentId=makeId();S.stageIndex=0;S.answers={};S.picks={};S.stageScores={};saveStudent();render();
+        }
+      });
     });
   });
+}
+/* Find an existing student doc in this class with a matching (case-insensitive) name. */
+function findStudentByName(code,name){
+  if(!fdb) return Promise.resolve(null);
+  var want=name.trim().toLowerCase();
+  return fdb.collection('sessions').doc(code).collection('students').get().then(function(snap){
+    var hit=null;
+    snap.forEach(function(d){ var v=d.data()||{}; if(!hit && (v.name||'').trim().toLowerCase()===want) hit={id:d.id,data:v}; });
+    return hit;
+  }).catch(function(){return null;});
+}
+/* Restore saved progress into S. */
+function restoreFromDoc(v){
+  v=v||{};
+  S.stageIndex = typeof v.stageIndex==='number'?v.stageIndex:0;
+  S.tier = v.tier||'steady';
+  S.preScore = (v.preScore!=null)?v.preScore:null;
+  S.preTotal = v.preTotal||0;
+  S.lowTestFlag = !!v.lowTestFlag;
+  S.placed = !!v.placed;
+  S.usedGo = !!v.usedGo;
+  S.badge = !!v.badge;
+  S.answers = v.answers||{};
+  S.picks = v.picks||{};
+  S.stageScores = v.scores||{};
 }
 
 function stepBar(){
@@ -937,29 +1048,32 @@ function wireNotebookTask(id){
    answer key reveal, chosen-path support card, and the progress check folded in. ===== */
 function stageStations(){
   var techList=STATIONS.techniques;
+  // VTR table guidance — students build their OWN table in their notebooks with teacher guidance.
+  var vtr='<div class="vtr-guide"><div class="vtr-title">📓 In your notebook, draw a VTR table (with your teacher):</div>'+
+    '<div style="overflow-x:auto"><table class="ctable vtr"><tr><th>Parts</th><th>Purpose</th><th>Complexities</th></tr>'+
+    '<tr><td>The <b>technique</b> used at each station</td><td>The <b>principle</b> — which factor is removed and why microbes can’t grow</td><td>Added <b>after discussion</b> with your peers</td></tr></table></div>'+
+    '<p class="muted" style="font-size:.85rem;margin:8px 0 0">Fill <b>Parts</b> and <b>Purpose</b> as you visit each station. Leave <b>Complexities</b> until the class discussion at the end.</p></div>';
+
   var stationsHtml=STATIONS.stations.map(function(st){
     // technique checklist (single choice) — options shuffled so position isn't a giveaway
     var order=shuffledOrder({q:'station'+st.n,options:techList},'tech'+st.n);
     var checklist='<div class="choices tech-list">'+order.map(function(ti,pos){
       return '<button type="button" class="choice tech-opt" data-qi="'+st.n+'" data-oi="'+ti+'"><span class="k">'+String.fromCharCode(65+pos)+'</span><span>'+esc(techList[ti])+'</span></button>';
     }).join('')+'</div>';
-    // answer key — matches the "Check your thinking" reveal format
-    var key='<details class="qa"><summary>Answer key</summary><div class="qa-a">'+
-      '<b>Technique:</b> '+esc(techList[st.techIdx])+'<br><b>Factor removed:</b> '+esc(st.factor)+'<br>'+esc(st.purpose)+'</div></details>';
+    // NOTE: no on-screen answer key for students — answers are in the teacher dashboard only.
     return '<div class="station"><div class="st-head"><span class="st-no">'+st.n+'</span>'+
       '<div class="st-title">Station '+st.n+'</div></div>'+
       '<div class="st-body">'+
       '<p><b>Items at this station:</b> '+esc(st.foods)+'</p>'+
-      // take a photo
-      '<label class="fld">1. Take a photo of the items</label>'+
+      // take a photo (no answers shown here)
+      '<label class="fld">1. Take a photo of the items for your record</label>'+
       '<label class="photo-btn" for="st'+st.n+'photo">📷 Add photo<input type="file" id="st'+st.n+'photo" accept="image/*" capture="environment" hidden></label>'+
       '<div class="photo-prev" id="st'+st.n+'prev"></div>'+
-      // identify technique
-      '<label class="fld">2. Which technique is this? (tick one)</label>'+checklist+
-      // how do I know
-      '<label class="fld">3. In your notebook, answer: <b>How do I know?</b></label>'+
-      notebookTask('st'+st.n,'Write how you know which technique was used, then tick.')+
-      key+
+      // identify technique → goes to Parts in their table
+      '<label class="fld">2. Which technique is this? (tick one — then write it in <b>Parts</b>)</label>'+checklist+
+      // principle → Purpose; how do I know in book
+      '<label class="fld">3. In your notebook, write the <b>Purpose</b> (the principle) and answer: <b>How do I know?</b></label>'+
+      notebookTask('st'+st.n,'Write the Purpose and how you know, then tick.')+
       '</div></div>';
   }).join('');
 
@@ -980,6 +1094,7 @@ function stageStations(){
   return '<div class="slide"><div class="slide-head teal"><span class="gem">4</span><h2>Station Inquiry — We Do</h2></div>'+
   '<div class="slide-body"><span class="stage-pill">Photograph · identify · explain</span>'+
   '<p>'+STATIONS.intro+'</p>'+
+  vtr+
   cardTray()+
   stationsHtml+
   progress+
@@ -1008,33 +1123,133 @@ function stageCommon(){
   '<img class="crest" src="'+LOGO+'" alt=""></div></div>';
 }
 
+/* Go-level content shows for the Go path OR once the Challenge badge is earned. */
+function showGo(){ return S.tier==='go' || S.badge; }
+
 /* ===== EXPLAIN THE SCIENCE (You Do) ===== */
 function stageExplain(){
   var fields=EXPLAIN.fields.map(function(f){return '<label class="fld" for="'+f.id+'">'+esc(f.label)+'</label><textarea class="in" id="'+f.id+'" style="min-height:50px"></textarea>';}).join('');
+  // SUPPORT (Ready): sentence frame + support card toggle
+  var support=(S.tier==='ready')
+    ? '<details class="qa"><summary>Support — sentence frame</summary><div class="qa-a">'+esc(EXPLAIN.sample)+'</div></details>'+
+      '<details class="qa support-card"><summary>Support card — what each technique does</summary><div class="qa-a"><ul class="pts">'+TECH_SUPPORT.map(function(t){return '<li><b>'+esc(t[0])+':</b> '+esc(t[1])+'</li>';}).join('')+'</ul></div></details>'
+    : '';
+  // PUSH (Go or badge): extra challenge field
+  var push=showGo()
+    ? '<div class="push-box"><div class="push-lab">⭐ Push task'+(S.badge?' · Challenge badge earned':'')+'</div>'+
+      '<label class="fld" for="e_extra">Name a method that removes TWO conditions and explain both.</label>'+
+      '<textarea class="in" id="e_extra" placeholder="For example, pickling…"></textarea></div>'
+    : '';
+  // offer the "push yourself" quiz to anyone not already on Go / without the badge
+  var offer=(!showGo())
+    ? '<div class="push-offer"><div><b>Want a challenge?</b> Take a 3-question quiz. Pass it and you unlock the ⭐ push tasks for the rest of the lesson.</div>'+
+      '<button class="btn sky" id="pushStart" type="button">Push yourself →</button></div>'
+    : '';
   return '<div class="slide"><div class="slide-head red"><span class="gem">7</span><h2>Explain the Science — You Do</h2></div>'+
   '<div class="slide-body"><span class="stage-pill">Independent · notebook</span>'+
-  '<p>'+esc(EXPLAIN.intro)+'</p>'+fields+
-  (S.tier==='ready'?'<details class="qa"><summary>Sentence frame</summary><div class="qa-a">'+esc(EXPLAIN.sample)+'</div></details>':'')+
-  (S.tier==='go'?'<label class="fld" for="e_extra">Go further: name a method that removes TWO conditions and explain both.</label><textarea class="in" id="e_extra" placeholder="For example, pickling…"></textarea>':'')+
-  cardTray()+
+  '<p>'+esc(EXPLAIN.intro)+'</p>'+fields+support+push+offer+
   '<div class="btn-row"><span class="sp"></span><button class="btn" id="exNext">Finish &#10003;</button></div>'+
   '<img class="crest" src="'+LOGO+'" alt=""></div></div>';
 }
+/* The push-yourself quiz overlay. Pass (>=2/3) → badge, then re-render so Go tasks appear. */
+function openPushQuiz(){
+  var body=quizBlock(PUSH_QUIZ,'push-opt');
+  var ov=document.createElement('div');ov.className='tier-overlay';ov.id='pushOverlay';
+  ov.innerHTML='<div class="tier-panel"><h3>⭐ Push yourself</h3>'+
+    '<p class="muted" style="margin:2px 0 10px">Answer all three. Get at least 2 right to earn the Challenge badge.</p>'+
+    '<div id="pushQ">'+body+'</div><div class="fb" id="pushFb"></div>'+
+    '<div class="btn-row"><button class="btn ghost" id="pushCancel">Maybe later</button><span class="sp"></span><button class="btn" id="pushCheck">Check</button></div></div>';
+  document.body.appendChild(ov);
+  // wire choice selection inside the overlay (reuse selWire logic locally)
+  ov.querySelectorAll('.choice').forEach(function(btn){
+    btn.addEventListener('click',function(){
+      var q=btn.closest('.qblock'), multi=q&&q.getAttribute('data-multi')==='1';
+      if(multi){ btn.classList.toggle('sel'); var k=btn.querySelector('.k'); if(k)k.innerHTML=btn.classList.contains('sel')?'&#9745;':'&#9744;'; return; }
+      var qi=btn.getAttribute('data-qi'); ov.querySelectorAll('.push-opt[data-qi="'+qi+'"]').forEach(function(x){x.classList.remove('sel');}); btn.classList.add('sel');
+    });
+  });
+  el('pushCancel').addEventListener('click',function(){ if(ov.parentNode)document.body.removeChild(ov); });
+  el('pushCheck').addEventListener('click',function(){
+    var unanswered=[]; PUSH_QUIZ.forEach(function(it,qi){ if(!ov.querySelector('.push-opt[data-qi="'+qi+'"].sel')) unanswered.push(qi+1); });
+    var f=el('pushFb'); if(unanswered.length){ f.className='fb show no'; f.textContent='Answer all three first.'; return; }
+    var r=gradeQuiz(PUSH_QUIZ,'push-opt');
+    if(r.score>=2){
+      S.badge=true; S.usedGo=true; saveStudent();
+      f.className='fb show ok'; f.innerHTML='<b>'+r.score+' / 3 — challenge badge earned! ⭐</b> Push tasks are now unlocked.';
+      setTimeout(function(){ if(ov.parentNode)document.body.removeChild(ov); render(); },1100);
+    } else {
+      f.className='fb show no'; f.innerHTML='<b>'+r.score+' / 3.</b> Not quite — review the techniques and try again when ready.';
+    }
+  });
+}
 
-/* ===== DONE ===== */
+/* ===== DONE — printable "food label" certificate ===== */
 function stageDone(){
-  var sc=S.stageScores;
   return '<div class="slide"><div class="slide-head teal"><span class="gem">&#9733;</span><h2>Lesson complete</h2></div>'+
   '<div class="slide-body"><span class="stage-pill">Well done, '+esc(S.name)+'!</span>'+
-  '<p>You explored how food is preserved — and the science of removing moisture, temperature, air or nutrients so microorganisms can’t grow. Your teacher can see your work.</p>'+
-  '<div class="dash-grid" style="grid-template-columns:repeat(3,1fr)">'+
-    stat((S.preScore!=null?S.preScore+'/'+S.preTotal:'–'),'Pre-test')+
-    stat((sc.cfu!=null?(sc.cfu?'✓':'✗'):'–'),'Apple check')+
-    stat((sc.progress!=null?sc.progress:'–'),'Progress check')+'</div>'+
-  '<div class="btn-row"><button class="btn ghost" onclick="restartStudent()">Back to start</button></div>'+
-  '<img class="crest" src="'+LOGO+'" alt=""></div></div>';
+  '<p>Here is your <b>Preservation Science</b> certificate — styled like a food label. Print it or save it as a PDF for your book.</p>'+
+  certificateHTML()+
+  '<div class="btn-row"><button class="btn" id="printCert">🖨️ Print / Save PDF</button><button class="btn ghost" onclick="restartStudent()">Back to start</button></div>'+
+  '</div></div>';
 }
-function restartStudent(){S.studentId=null;S.placed=false;S.stageIndex=0;S.stageScores={};S.preScore=null;S.lowTestFlag=false;go('');}
+/* The food-label certificate. OMAN = Optimum temperature, Moisture, Air, Nutrients. */
+function certificateHTML(){
+  var oman=[
+    ['O','Optimum temperature','freezing / refrigeration takes it away'],
+    ['M','Moisture','drying, salting &amp; sugaring take it away'],
+    ['A','Air (oxygen)','canning, vacuum sealing &amp; airtight packing take it away'],
+    ['N','Nutrients / medium','salting, pickling &amp; sugaring block it']
+  ];
+  var omanRows=oman.map(function(o){return '<tr><td class="oman-k">'+o[0]+'</td><td><b>'+o[1]+'</b><br><span class="lbl-sub">'+o[2]+'</span></td></tr>';}).join('');
+  // "ingredients" = what they learned
+  var learned=[];
+  (S.picks&&S.picks['tech-opt'])&&Object.keys(S.picks['tech-opt']).sort().forEach(function(qi){
+    var arr=S.picks['tech-opt'][qi]; if(arr&&arr.length!=null){ var oi=arr[0]!=null?arr[0]:arr; if(typeof oi==='number'&&STATIONS.techniques[oi]) learned.push(STATIONS.techniques[oi]); }
+  });
+  if(!learned.length) learned=['Drying','Freezing','Canning / vacuum sealing','Salting / pickling / sugaring'];
+  var uniq=[]; learned.forEach(function(x){ if(uniq.indexOf(x)<0) uniq.push(x); });
+  var ing=uniq.map(function(x){return '<li>'+esc(x)+'</li>';}).join('');
+  var dateStr=new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
+  return '<div class="cert" id="cert">'+
+    '<div class="cert-flag">PRESERVATION FACTS</div>'+
+    '<div class="cert-name">'+esc(S.name)+'</div>'+
+    '<div class="cert-sub">Certified Preservation Scientist · PYP 5</div>'+
+    '<div class="cert-rule thick"></div>'+
+    '<div class="cert-line"><span>Path</span><b>'+esc(TIER_LABEL[S.tier]||S.tier)+(S.badge?' + ⭐ Challenge':'')+'</b></div>'+
+    '<div class="cert-rule"></div>'+
+    '<div class="cert-serv">The OMAN factors microbes need — and how we take them away:</div>'+
+    '<table class="oman-tbl">'+omanRows+'</table>'+
+    '<div class="cert-rule thick"></div>'+
+    '<div class="cert-serv"><b>Techniques I can explain</b></div>'+
+    '<ul class="cert-ing">'+ing+'</ul>'+
+    '<div class="cert-rule"></div>'+
+    '<div class="cert-foot"><span>'+esc(dateStr)+'</span><span>GEMS Modern Academy</span></div>'+
+    '<div class="cert-big">Big idea: to preserve food, remove or limit at least ONE of O·M·A·N so microorganisms can’t grow.</div>'+
+  '</div>';
+}
+function restartStudent(){S.studentId=null;S.placed=false;S.stageIndex=0;S.stageScores={};S.preScore=null;S.lowTestFlag=false;S.answers={};S.picks={};S.badge=false;go('');}
+function printCertificate(){
+  var cert=el('cert'); if(!cert) return;
+  var css='body{font-family:Arial,Helvetica,sans-serif;margin:0;padding:24px;background:#fff;color:#111}'+
+    '.cert{max-width:420px;margin:0 auto;border:3px solid #111;border-radius:8px;padding:16px 18px}'+
+    '.cert-flag{font-weight:900;font-size:1.9rem;letter-spacing:.02em;border-bottom:8px solid #111;padding-bottom:4px}'+
+    '.cert-name{font-size:1.5rem;font-weight:800;margin-top:8px}'+
+    '.cert-sub{font-size:.85rem;color:#444;margin-bottom:6px}'+
+    '.cert-rule{border-top:1px solid #111;margin:7px 0}.cert-rule.thick{border-top:6px solid #111}'+
+    '.cert-line{display:flex;justify-content:space-between;font-size:.95rem;padding:2px 0}'+
+    '.cert-serv{font-size:.9rem;margin:4px 0;font-weight:700}'+
+    '.oman-tbl{width:100%;border-collapse:collapse;font-size:.88rem}'+
+    '.oman-tbl td{border-bottom:1px solid #ccc;padding:5px 4px;vertical-align:top}'+
+    '.oman-k{font-weight:900;font-size:1.1rem;width:26px;text-align:center}'+
+    '.lbl-sub{color:#555;font-size:.8rem}'+
+    '.cert-ing{margin:4px 0 4px 18px;font-size:.9rem}'+
+    '.cert-foot{display:flex;justify-content:space-between;font-size:.8rem;color:#444;margin-top:6px}'+
+    '.cert-big{margin-top:10px;font-size:.86rem;font-style:italic;border-top:3px solid #111;padding-top:6px}';
+  var w=window.open('','_blank'); if(!w) return;
+  w.document.open();
+  w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>Preservation Certificate — '+esc(S.name)+'</title><style>'+css+'</style></head><body>'+cert.outerHTML+'<scr'+'ipt>window.onload=function(){setTimeout(function(){window.print();},300);}</scr'+'ipt></body></html>');
+  w.document.close();
+}
 
 /* ===================== WIRING ===================== */
 function clsOf(btn){ return ['pre-opt','rec-opt','cfu-opt','pc-opt','pcm-opt','tech-opt'].filter(function(c){return btn.classList.contains(c);})[0]||''; }
@@ -1151,9 +1366,14 @@ function wireStage(stage){
 
   if(stage==='common'){ el('cmNext').addEventListener('click',function(){saveStudent({common:{a1:val('cmWrite1'),a2:val('cmWrite2')}});advance();}); }
 
+  if(stage==='done'){
+    if(el('printCert')) el('printCert').addEventListener('click',printCertificate);
+  }
+
   if(stage==='explain'){
+    if(el('pushStart')) el('pushStart').addEventListener('click',openPushQuiz);
     el('exNext').addEventListener('click',function(){
-      if(S.tier==='go'&&val('e_extra').length>3)S.usedGo=true;
+      if(showGo()&&val('e_extra').length>3)S.usedGo=true;
       saveStudent({explain:{food:val('e_food'),method:val('e_method'),cond:val('e_cond'),why:val('e_why'),extra:val('e_extra')}});
       advance();
     });
