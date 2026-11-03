@@ -542,15 +542,35 @@ function paintDashboard(rows){
   paintPacePanel();
   el('stats').innerHTML=stat(n,'Students joined')+stat(avg+'%','Average progress')+stat(done+' / '+n,'Finished lesson')+stat(flagged,'Flagged (low pre-test)');
   if(!n){el('dashBody').innerHTML='<div class="empty">No students yet. Share the code to begin.</div>';return;}
-  var head='<tr><th>Student</th><th>Path</th><th>Pre-test</th><th>Stage</th><th>Progress</th><th>Flags</th></tr>';
+  // detect duplicate names so the teacher can spot & remove repeats
+  var nameCount={}; rows.forEach(function(r){var k=(r.name||'').trim().toLowerCase();nameCount[k]=(nameCount[k]||0)+1;});
+  var head='<tr><th>Student</th><th>Path</th><th>Pre-test</th><th>Stage</th><th>Progress</th><th>Flags</th><th></th></tr>';
   var body=rows.map(function(r){
-    return '<tr><td class="name">'+esc(r.name||'—')+'</td><td>'+tierChip(r.tier)+'</td>'+
+    var dup=((r.name||'').trim()&&nameCount[(r.name||'').trim().toLowerCase()]>1);
+    return '<tr><td class="name">'+esc(r.name||'—')+(dup?' <span class="flag warn" title="duplicate name">dup</span>':'')+'</td><td>'+tierChip(r.tier)+'</td>'+
       '<td class="tnum">'+(r.preScore!=null?r.preScore+'/'+(r.preTotal||10):'–')+'</td>'+
       '<td>'+esc(STAGE_LABEL[r.stage]||'Joining')+'</td>'+
       '<td><span class="mini"><i style="width:'+(r.percent||0)+'%"></i></span> <span class="tnum">'+(r.percent||0)+'%</span></td>'+
-      '<td>'+(r.lowTestFlag?'<span class="flag warn">low pre-test</span> ':'')+(r.usedGo?'<span class="flag push">go</span>':'')+'</td></tr>';
+      '<td>'+(r.lowTestFlag?'<span class="flag warn">low pre-test</span> ':'')+(r.usedGo?'<span class="flag push">go</span>':'')+'</td>'+
+      '<td><button class="row-del" data-id="'+esc(r._id||'')+'" data-name="'+esc(r.name||'')+'" title="Remove this entry">✕</button></td></tr>';
   }).join('');
   el('dashBody').innerHTML='<div class="dash-table-wrap"><table class="dash">'+head+body+'</table></div>';
+  document.querySelectorAll('.row-del').forEach(function(b){
+    b.addEventListener('click',function(){
+      var id=b.getAttribute('data-id'), nm=b.getAttribute('data-name')||'this student';
+      if(!id) return;
+      if(window.confirm('Remove "'+nm+'" from the class? This deletes their entry and cannot be undone.')){
+        deleteStudent(id, b);
+      }
+    });
+  });
+}
+function deleteStudent(studentId, btn){
+  if(!fdb||!S.code||!studentId){ return; }
+  if(btn){ btn.disabled=true; btn.textContent='…'; }
+  fdb.collection('sessions').doc(S.code).collection('students').doc(studentId).delete()
+    .then(function(){ /* onSnapshot will refresh the table */ })
+    .catch(function(e){ if(btn){ btn.disabled=false; btn.textContent='✕'; } window.alert('Could not remove: '+(e&&e.code||'error')+'. If this keeps happening, the database rules may need to allow deletes.'); });
 }
 
 /* anonymous projector view */
@@ -711,25 +731,56 @@ function stageWait(){
     '<img class="crest" src="'+LOGO+'" alt=""></div></div>';
 }
 
-/* ---- tier picker overlay: shown on entry (after pre-test) and from "change path" ---- */
-function openTierPicker(){
+/* ---- tier picker overlay. advanceAfter=true (after the pre-test) moves the student
+   INTO the lesson on confirm; false (the "change path" button mid-lesson) just re-renders
+   the current stage with the new tier applied. ---- */
+function openTierPicker(advanceAfter){
   var rec=S.tier;
   var cards=TIERS.map(function(t){
     return '<button type="button" class="tier-card '+t+(t===rec?' rec':'')+'" data-tier="'+t+'">'+
       '<div class="tier-name">'+esc(TIER_LABEL[t])+(t===rec?' <span class="tier-badge">recommended</span>':'')+'</div>'+
       '<div class="tier-blurb">'+esc(TIER_BLURB[t])+'</div></button>';
   }).join('');
+  var scoreLine = (advanceAfter && S.preScore!=null)
+    ? '<div class="score-box"><div class="score-num">'+S.preScore+' / '+S.preTotal+'</div><div class="score-lab">your pre-test score</div></div>'
+    : '';
   var ov=document.createElement('div');ov.className='tier-overlay';ov.id='tierOverlay';
-  ov.innerHTML='<div class="tier-panel"><h3>Choose your path</h3>'+
-    '<p class="muted" style="margin:2px 0 12px">Your pre-test suggests <b>'+esc(TIER_LABEL[rec])+'</b>'+
-      (S.preScore!=null?(' ('+S.preScore+'/'+S.preTotal+')'):'')+'. You can pick any path — move up whenever you’re ready.</p>'+
+  ov.innerHTML='<div class="tier-panel"><h3>'+(advanceAfter?'Your result':'Choose your path')+'</h3>'+
+    scoreLine+
+    '<p class="muted" style="margin:2px 0 12px">Your pre-test suggests <b>'+esc(TIER_LABEL[rec])+'</b>. You can pick any path — move up whenever you’re ready.</p>'+
     '<div class="tier-cards">'+cards+'</div>'+
-    '<div class="btn-row"><span class="sp"></span><button class="btn" id="tierDone">Use this path</button></div></div>';
+    '<div class="btn-row"><span class="sp"></span><button class="btn" id="tierDone">'+(advanceAfter?'Start the lesson →':'Use this path')+'</button></div></div>';
   document.body.appendChild(ov);
   var sel=rec;
   ov.querySelectorAll('.tier-card').forEach(function(b){b.addEventListener('click',function(){ov.querySelectorAll('.tier-card').forEach(function(x){x.classList.remove('sel');});b.classList.add('sel');sel=b.getAttribute('data-tier');});});
   (ov.querySelector('.tier-card.'+rec)||{}).classList&&ov.querySelector('.tier-card.'+rec).classList.add('sel');
-  el('tierDone').addEventListener('click',function(){S.tier=sel;S.usedGo=(sel==='go')||S.usedGo;saveStudent();document.body.removeChild(ov);render();});
+  el('tierDone').addEventListener('click',function(){
+    S.tier=sel;S.usedGo=(sel==='go')||S.usedGo;saveStudent();
+    if(ov.parentNode) document.body.removeChild(ov);
+    if(advanceAfter){ advance(); } else { render(); }
+  });
+}
+
+/* ---- lock the pre-test after one attempt (no changing answers) ---- */
+function lockPretest(){
+  document.querySelectorAll('.pre-opt').forEach(function(b){ b.disabled=true; b.style.pointerEvents='none'; b.classList.add('locked'); });
+  var pc=el('preCheck'); if(pc){ pc.disabled=true; pc.style.display='none'; }
+}
+/* ---- re-mark correct/incorrect and show the score (used on submit and on re-render) ---- */
+function showPreResult(){
+  // mark green/red against the stored answers
+  PRETEST.forEach(function(it,qi){
+    var ans=answerSet(it);
+    document.querySelectorAll('.pre-opt[data-qi="'+qi+'"]').forEach(function(b){
+      var oi=parseInt(b.getAttribute('data-oi'),10);
+      var inAns=ans.indexOf(oi)>=0, picked=b.classList.contains('sel');
+      b.classList.remove('correct','wrong');
+      if(inAns) b.classList.add('correct');
+      else if(picked) b.classList.add('wrong');
+    });
+  });
+  var f=el('preFb');
+  if(f){ f.className='fb show ok'; f.innerHTML='<b>Your score: '+S.preScore+' / '+S.preTotal+'.</b> Correct answers are shown in green. This is your one attempt — answers are now locked.'; }
 }
 
 /* ===== PRE-TEST (10 Qs, 4 multi-answer) ===== */
@@ -919,15 +970,24 @@ function wireStage(stage){
   var adv=function(){advance();};
 
   if(stage==='pretest'){
+    // If the student already submitted (re-render / came back), show the locked result — one attempt only.
+    if(S.preScore!=null && S.placed){ lockPretest(); showPreResult(); }
     el('preCheck').addEventListener('click',function(){
-      var r=gradeQuiz(PRETEST,'pre-opt'),f=el('preFb');
-      if(r.answered<PRETEST.length){f.className='fb show no';f.textContent='Answer all '+PRETEST.length+' questions, then check.';return;}
+      if(S.preScore!=null){ return; } // already attempted — no second try
+      var f=el('preFb');
+      // every question must have at least one selection
+      var unanswered=[];
+      PRETEST.forEach(function(it,qi){ if(!document.querySelector('.pre-opt[data-qi="'+qi+'"].sel')) unanswered.push(qi+1); });
+      if(unanswered.length){ f.className='fb show no'; f.textContent='Please answer every question first (missing: '+unanswered.join(', ')+').'; return; }
+      var r=gradeQuiz(PRETEST,'pre-opt');
       S.preScore=r.score; S.preTotal=r.max;
       S.lowTestFlag = r.score<=3;
       S.tier=placeByScore(r.score,r.max);
-      f.className='fb show ok';f.innerHTML='<b>'+r.score+' / '+r.max+'.</b> Correct answers are shown in green. Choose your path next.';
-      el('preNextRow').style.display='flex'; S.placed=true; saveStudent();
-      openTierPicker();
+      S.placed=true;
+      lockPretest();           // one attempt: freeze the answers
+      showPreResult();         // show the score inline
+      saveStudent();
+      openTierPicker(true);    // pick a path, then advance INTO the lesson
     });
     el('preNext').addEventListener('click',adv);
   }
