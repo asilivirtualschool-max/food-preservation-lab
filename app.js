@@ -149,31 +149,35 @@ var STATIONS={
   intro:"At each station your job is simple: <b>observe</b> and note the food items and the method of preservation, then <b>identify</b> what factor has been taken away or blocked.",
   model:"Teacher think-aloud: “I can see raisins and dried herbs. The station tells me these foods have been dried. I record the method and food examples under Parts. Drying removes moisture, so under Purpose I explain how having less water limits the growth of microorganisms.”",
   columns:["Method of preservation","Food items","Purpose","Principle (which factor is removed?)"],
+  // the checklist of techniques students pick from (same list at every station)
+  techniques:["Drying / Dehydration","Freezing / Refrigeration","Vacuum sealing / Canning / Airtight packaging","Salting / Pickling / Sugaring","Boiling / Pasteurisation"],
   stations:[
-    {n:1,title:"Station 1 — Removal of moisture",technique:"Drying / Dehydration",
+    {n:1,techIdx:0,
      foods:"Dried chillies, dried peas, raisins, banana chips, dried herbs (mint, oregano), sun-dried samples",
      factor:"Moisture",
      purpose:"Drying removes moisture from the food. Microorganisms have less water available, which limits their growth and slows spoilage."},
-    {n:2,title:"Station 2 — Removal of optimum temperature",technique:"Freezing / Refrigeration",
+    {n:2,techIdx:1,
      foods:"Frozen peas or corn, frozen meat or fish, chilled milk or yogurt",
      factor:"Optimum temperature",
-     purpose:"Lowering the temperature slows microbes right down, so food stays fresh far longer."},
-    {n:3,title:"Station 3 — Removal of air / oxygen",technique:"Vacuum sealing, Canning, Airtight packaging",
+     purpose:"Freezing / refrigeration lowers the temperature, which slows microbes right down, so food stays fresh far longer."},
+    {n:3,techIdx:2,
      foods:"Vacuum-packed cheese, sealed canned beans/corn/fruit, packaged potato chips, vacuum-packed dry fruits or nuts, tetra-packed juice or milk",
      factor:"Air (oxygen)",
-     purpose:"Removing or sealing out air means microbes that need oxygen cannot grow."},
-    {n:4,title:"Station 4 — Removal of nutrients / medium",technique:"Salting, Pickling, Sugaring",
+     purpose:"Vacuum sealing / canning / airtight packaging removes or seals out air, so microbes that need oxygen cannot grow."},
+    {n:4,techIdx:3,
      foods:"Pickles (mango, cucumber in vinegar, oil or brine), salted fish or meat, jams and jellies, honey-preserved ginger or fruits, sugar-coated amla or candy",
      factor:"Nutrients / medium",
-     purpose:"Salt and sugar draw water out and block microbes from reaching the food's nutrients, so they cannot grow."}
-  ],
-  expectations:[
-    "Move with your group when the signal sounds.",
-    "Give everyone a chance to share their thinking.",
-    "Write your own responses in your own words.",
-    "Leave 'Complexities' for the final discussion."
+     purpose:"Salting / pickling / sugaring draws water out and blocks microbes from reaching the food's nutrients, so they cannot grow."}
   ]
 };
+/* Support card: what each technique does (shown only when the student's path needs it). */
+var TECH_SUPPORT=[
+  ["Drying / Dehydration","Takes away MOISTURE (water). Microbes need water to grow — remove it and they can't."],
+  ["Freezing / Refrigeration","Takes away the right TEMPERATURE. Cold slows microbes right down."],
+  ["Vacuum sealing / Canning / Airtight","Takes away AIR (oxygen). Many microbes need oxygen to grow."],
+  ["Salting / Pickling / Sugaring","Blocks the NUTRIENTS / draws out water with salt, sugar or acid, so microbes can't feed."],
+  ["Boiling / Pasteurisation","Uses HEAT to kill microbes already in the food (e.g. milk)."]
+];
 
 /* ----- PROGRESS CHECK (slides 16–18, 23): traffic-light self-check + a station MCQ ----- */
 var PROGRESS={
@@ -254,9 +258,9 @@ var S={role:null,code:null,name:null,studentId:null,tier:'steady',
    Both persist across re-renders (e.g. teacher pause/wait) so nothing is retyped. */
 
 /* FULL LESSON FLOW — follows the PPT order (Lesson 1 of 2) */
-var STAGES=['pretest','recap','spoilage','outcome1','cfu','outcome2','hook','stations','progress','common','explain','done'];
+var STAGES=['pretest','recap','spoilage','outcome1','cfu','outcome2','hook','stations','common','explain','done'];
 var STAGE_LABEL={pretest:'Pre-test',recap:'Recall',spoilage:'Food Spoilage',outcome1:'Outcome 1',cfu:'Check Understanding',
-  outcome2:'Outcome 2',hook:'Hook',stations:'Stations',progress:'Progress Check',common:'What’s in Common',explain:'Explain the Science',done:'Finished'};
+  outcome2:'Outcome 2',hook:'Hook',stations:'Stations',common:'What’s in Common',explain:'Explain the Science',done:'Finished'};
 
 /* READY / STEADY / GO — ready = most supported entry, go = challenge */
 var TIERS=['ready','steady','go'];
@@ -519,7 +523,7 @@ function presentMove(dir){
 }
 function presentStageHTML(stage){
   var fn={recap:stageRecap,spoilage:stageSpoilage,outcome1:stageOutcome1,cfu:stageCFU,
-    outcome2:stageOutcome2,hook:stageHook,stations:stageStations,progress:stageProgress,common:stageCommon,explain:stageExplain}[stage];
+    outcome2:stageOutcome2,hook:stageHook,stations:stageStations,common:stageCommon,explain:stageExplain}[stage];
   return fn?fn():'<div class="slide"><div class="slide-body"><p>'+esc(STAGE_LABEL[stage])+'</p></div></div>';
 }
 
@@ -721,7 +725,7 @@ function renderStage(sc){
     sc.innerHTML=top+stageWait(); return;
   }
   var body=({pretest:stagePretest,recap:stageRecap,spoilage:stageSpoilage,outcome1:stageOutcome1,cfu:stageCFU,
-    outcome2:stageOutcome2,hook:stageHook,stations:stageStations,progress:stageProgress,common:stageCommon,explain:stageExplain,done:stageDone}[stage])();
+    outcome2:stageOutcome2,hook:stageHook,stations:stageStations,common:stageCommon,explain:stageExplain,done:stageDone}[stage])();
   sc.innerHTML=top+body;
   restoreInputs();          // put back anything the student already typed/selected
   wireStage(stage);
@@ -929,49 +933,65 @@ function wireNotebookTask(id){
   }
 }
 
-/* ===== STATIONS (We Do) ===== */
+/* ===== STATIONS (We Do) — photo, identify-from-checklist, "How do I know?" notebook,
+   answer key reveal, chosen-path support card, and the progress check folded in. ===== */
 function stageStations(){
-  var tierNote=S.tier==='ready'?'Pick ONE station to focus on first. Name the method and the ONE factor it removes.':
-    S.tier==='go'?'Aim to compare stations and spot a method that removes more than one factor.':'For each station, name the factor removed and explain WHY it stops microbes.';
-  var cards=STATIONS.stations.map(function(st){
-    return '<div class="station"><div class="st-head"><span class="st-no">'+st.n+'</span><div><div class="st-title">'+esc(st.title)+'</div>'+
-      '<div class="st-tech">'+esc(st.technique)+'</div></div><span class="st-factor">removes: '+esc(st.factor)+'</span></div>'+
-      '<div class="st-body"><p><b>Food items:</b> '+esc(st.foods)+'</p>'+
-      '<label class="fld" for="st'+st.n+'p">Purpose — what does this method do to microbes? (write in your own words)</label>'+
-      '<textarea class="in" id="st'+st.n+'p" placeholder="This method removes '+esc(st.factor.toLowerCase())+', so microorganisms…"></textarea>'+
-      '<details class="qa"><summary>Check your thinking</summary><div class="qa-a">'+esc(st.purpose)+'</div></details></div></div>';
+  var techList=STATIONS.techniques;
+  var stationsHtml=STATIONS.stations.map(function(st){
+    // technique checklist (single choice) — options shuffled so position isn't a giveaway
+    var order=shuffledOrder({q:'station'+st.n,options:techList},'tech'+st.n);
+    var checklist='<div class="choices tech-list">'+order.map(function(ti,pos){
+      return '<button type="button" class="choice tech-opt" data-qi="'+st.n+'" data-oi="'+ti+'"><span class="k">'+String.fromCharCode(65+pos)+'</span><span>'+esc(techList[ti])+'</span></button>';
+    }).join('')+'</div>';
+    // answer key — matches the "Check your thinking" reveal format
+    var key='<details class="qa"><summary>Answer key</summary><div class="qa-a">'+
+      '<b>Technique:</b> '+esc(techList[st.techIdx])+'<br><b>Factor removed:</b> '+esc(st.factor)+'<br>'+esc(st.purpose)+'</div></details>';
+    return '<div class="station"><div class="st-head"><span class="st-no">'+st.n+'</span>'+
+      '<div class="st-title">Station '+st.n+'</div></div>'+
+      '<div class="st-body">'+
+      '<p><b>Items at this station:</b> '+esc(st.foods)+'</p>'+
+      // take a photo
+      '<label class="fld">1. Take a photo of the items</label>'+
+      '<label class="photo-btn" for="st'+st.n+'photo">📷 Add photo<input type="file" id="st'+st.n+'photo" accept="image/*" capture="environment" hidden></label>'+
+      '<div class="photo-prev" id="st'+st.n+'prev"></div>'+
+      // identify technique
+      '<label class="fld">2. Which technique is this? (tick one)</label>'+checklist+
+      // how do I know
+      '<label class="fld">3. In your notebook, answer: <b>How do I know?</b></label>'+
+      notebookTask('st'+st.n,'Write how you know which technique was used, then tick.')+
+      key+
+      '</div></div>';
   }).join('');
-  var exp='<ul class="pts">'+STATIONS.expectations.map(function(e){return '<li>'+esc(e)+'</li>';}).join('')+'</ul>';
-  return '<div class="slide"><div class="slide-head teal"><span class="gem">4</span><h2>Station Inquiry — We Do</h2></div>'+
-  '<div class="slide-body"><span class="stage-pill">Observe · identify · explain</span>'+
-  '<p>'+STATIONS.intro+'</p>'+
-  '<div class="frames"><b>How I model it:</b> '+esc(STATIONS.model)+'</div>'+
-  '<p style="font-weight:700">'+esc(tierNote)+'</p>'+
-  exp+cardTray()+cards+
-  '<div class="btn-row"><span class="sp"></span><button class="btn" id="stNext">Next &#8594;</button></div>'+
-  '<img class="crest" src="'+LOGO+'" alt=""></div></div>';
-}
-function cardTray(){
-  var order = S.tier==='ready'?['ready','steady','go']:S.tier==='go'?['go','steady','ready']:['steady','ready','go'];
-  var html='<div class="tray3">'+order.map(function(t){return psCard(CARDS[t],t);}).join('')+'</div>';
-  return '<div style="margin:6px 0 10px"><div class="stage-pill">Help cards — use the one that fits you</div>'+html+'</div>';
-}
-function psCard(c,cls){return '<div class="pscard '+cls+(cls===S.tier?' mine':'')+'"><div class="lab">'+esc(c.title)+(cls===S.tier?' ★':'')+'</div><div style="font-size:.78rem;color:var(--ink-soft);margin-bottom:4px">'+esc(c.move)+'</div><ul>'+c.items.map(function(i){return '<li>'+esc(i)+'</li>';}).join('')+'</ul></div>';}
 
-/* ===== PROGRESS CHECK ===== */
-function stageProgress(){
+  // progress check, folded in
   var tl=PROGRESS.traffic.map(function(t){return '<div class="tl"><span class="tl-l">'+t[0]+'</span><span>'+esc(t[1])+'</span></div>';}).join('');
   var teacherQs='<ul class="pts">'+PROGRESS.teacherQs.map(function(q){return '<li>'+esc(q)+'</li>';}).join('')+'</ul>';
-  return '<div class="slide"><div class="slide-head gold2"><span class="gem">5</span><h2>Progress Check</h2></div>'+
-  '<div class="slide-body"><span class="stage-pill">Be ready — I will visit your group</span>'+
-  '<p style="font-weight:700">How confident are you? Pick your colour:</p><div class="tl-wrap">'+tl+'</div>'+
-  '<p class="muted" style="font-size:.9rem">Your teacher may ask:</p>'+teacherQs+
-  '<p style="font-weight:700;margin-top:10px">'+esc(PROGRESS.mcq.q)+'</p>'+
-  (function(){var order=shuffledOrder(PROGRESS.mcq,'pc');return '<div class="choices">'+order.map(function(oi,pos){return '<button type="button" class="choice pc-opt" data-oi="'+oi+'"><span class="k">'+String.fromCharCode(65+pos)+'</span><span>'+esc(PROGRESS.mcq.options[oi])+'</span></button>';}).join('')+'</div>';})()+
-  '<div style="margin-top:14px">'+quizBlock([PROGRESS.match],'pcm-opt')+'</div>'+
-  '<button class="btn" id="pcCheck">Check</button><div class="fb" id="pcFb"></div>'+
-  '<div class="btn-row" id="pcNextRow" style="display:none"><span class="sp"></span><button class="btn" id="pcNext">Next &#8594;</button></div>'+
+  var progress='<div class="slide-head gold2" style="margin-top:22px"><span class="gem">✓</span><h2>Progress Check</h2></div>'+
+    '<div style="padding:4px 2px 0">'+
+    '<p class="muted" style="font-size:.85rem">Be ready — I will visit your group.</p>'+
+    '<p style="font-weight:700">How confident are you? Pick your colour:</p><div class="tl-wrap">'+tl+'</div>'+
+    '<p class="muted" style="font-size:.9rem">Your teacher may ask:</p>'+teacherQs+
+    '<p style="font-weight:700;margin-top:10px">'+esc(PROGRESS.mcq.q)+'</p>'+
+    (function(){var order=shuffledOrder(PROGRESS.mcq,'pc');return '<div class="choices">'+order.map(function(oi,pos){return '<button type="button" class="choice pc-opt" data-oi="'+oi+'"><span class="k">'+String.fromCharCode(65+pos)+'</span><span>'+esc(PROGRESS.mcq.options[oi])+'</span></button>';}).join('')+'</div>';})()+
+    '<div style="margin-top:14px">'+quizBlock([PROGRESS.match],'pcm-opt')+'</div>'+
+    '<button class="btn" id="pcCheck">Check</button><div class="fb" id="pcFb"></div>'+
+    '</div>';
+
+  return '<div class="slide"><div class="slide-head teal"><span class="gem">4</span><h2>Station Inquiry — We Do</h2></div>'+
+  '<div class="slide-body"><span class="stage-pill">Photograph · identify · explain</span>'+
+  '<p>'+STATIONS.intro+'</p>'+
+  cardTray()+
+  stationsHtml+
+  progress+
+  '<div class="btn-row" id="stNextRow" style="display:none;margin-top:18px"><span class="sp"></span><button class="btn" id="stNext">Next &#8594;</button></div>'+
   '<img class="crest" src="'+LOGO+'" alt=""></div></div>';
+}
+/* Only show the support card for the student's chosen path (a toggle to open it). */
+function cardTray(){
+  if(S.tier!=='ready') return '';   // support card is for the Ready path (needs more support)
+  var rows=TECH_SUPPORT.map(function(t){return '<li><b>'+esc(t[0])+':</b> '+esc(t[1])+'</li>';}).join('');
+  return '<details class="qa support-card"><summary>Support card — what each technique does</summary>'+
+    '<div class="qa-a"><ul class="pts">'+rows+'</ul></div></details>';
 }
 
 /* ===== WHAT'S IN COMMON + complexity ===== */
@@ -1017,7 +1037,16 @@ function stageDone(){
 function restartStudent(){S.studentId=null;S.placed=false;S.stageIndex=0;S.stageScores={};S.preScore=null;S.lowTestFlag=false;go('');}
 
 /* ===================== WIRING ===================== */
-function clsOf(btn){ return ['pre-opt','rec-opt','cfu-opt','pc-opt','pcm-opt'].filter(function(c){return btn.classList.contains(c);})[0]||''; }
+function clsOf(btn){ return ['pre-opt','rec-opt','cfu-opt','pc-opt','pcm-opt','tech-opt'].filter(function(c){return btn.classList.contains(c);})[0]||''; }
+/* show a thumbnail when a photo is chosen (kept in-memory only; not uploaded anywhere) */
+function wirePhoto(inputId,prevId){
+  var inp=el(inputId), prev=el(prevId); if(!inp||!prev) return;
+  inp.addEventListener('change',function(){
+    var fl=inp.files&&inp.files[0]; if(!fl) return;
+    var url=URL.createObjectURL(fl);
+    prev.innerHTML='<img src="'+url+'" alt="your photo"><span class="photo-ok">✓ photo added</span>';
+  });
+}
 function selWire(){
   document.querySelectorAll('.choice').forEach(function(btn){
     if(btn.disabled||btn.classList.contains('locked')) return;
@@ -1095,12 +1124,12 @@ function wireStage(stage){
   }
 
   if(stage==='stations'){
-    el('stNext').addEventListener('click',function(){
-      saveStudent({stations:{s1:val('st1p'),s2:val('st2p'),s3:val('st3p'),s4:val('st4p')}}); advance();
+    // photo previews + notebook ticks for each station
+    STATIONS.stations.forEach(function(st){
+      wirePhoto('st'+st.n+'photo','st'+st.n+'prev');
+      wireNotebookTask('st'+st.n);
     });
-  }
-
-  if(stage==='progress'){
+    // progress check (folded in): Check reveals the Next button
     el('pcCheck').addEventListener('click',function(){
       var sel=document.querySelector('.pc-opt.sel'),f=el('pcFb');
       var rm=gradeQuiz([PROGRESS.match],'pcm-opt');
@@ -1109,9 +1138,15 @@ function wireStage(stage){
       var ok=parseInt(sel.getAttribute('data-oi'),10)===PROGRESS.mcq.answer;
       S.stageScores.progress=(ok?1:0)+' + '+rm.score+'/'+rm.max;
       f.className='fb show ok';f.innerHTML='<b>'+(ok?'Correct!':'Look again.')+'</b> Drying removes moisture, which limits microbial growth.';
-      el('pcNextRow').style.display='flex'; saveStudent();
+      el('stNextRow').style.display='flex'; saveStudent();
     });
-    el('pcNext').addEventListener('click',adv);
+    el('stNext').addEventListener('click',function(){
+      var picks={}; STATIONS.stations.forEach(function(st){
+        var b=document.querySelector('.tech-opt[data-qi="'+st.n+'"].sel');
+        picks['s'+st.n]={tech:b?parseInt(b.getAttribute('data-oi'),10):null, done:!!(el('st'+st.n+'Done')&&el('st'+st.n+'Done').checked)};
+      });
+      saveStudent({stations:picks}); advance();
+    });
   }
 
   if(stage==='common'){ el('cmNext').addEventListener('click',function(){saveStudent({common:{a1:val('cmWrite1'),a2:val('cmWrite2')}});advance();}); }
