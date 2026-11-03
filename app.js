@@ -247,7 +247,11 @@ var CARDS={
 /* ===================== STATE ===================== */
 var S={role:null,code:null,name:null,studentId:null,tier:'steady',
   stageIndex:0,placed:false,preScore:null,preTotal:0,lowTestFlag:false,stageScores:{},usedGo:false,
-  unsub:null,metaUnsub:null,paced:false,releasedIndex:0,waiting:false,pinOk:false,presentIdx:1};
+  unsub:null,metaUnsub:null,paced:false,releasedIndex:0,waiting:false,pinOk:false,presentIdx:1,
+  answers:{}, picks:{}};
+/* answers: { fieldId: textValue | checkboxBool }  (text boxes, ticks)
+   picks:   { cls: { qi: [originalOptionIndexes...] } }  (selected MCQ/multi options)
+   Both persist across re-renders (e.g. teacher pause/wait) so nothing is retyped. */
 
 /* FULL LESSON FLOW — follows the PPT order (Lesson 1 of 2) */
 var STAGES=['pretest','recap','spoilage','outcome1','cfu','outcome2','hook','stations','progress','common','explain','done'];
@@ -718,7 +722,54 @@ function renderStage(sc){
   }
   var body=({pretest:stagePretest,recap:stageRecap,spoilage:stageSpoilage,outcome1:stageOutcome1,cfu:stageCFU,
     outcome2:stageOutcome2,hook:stageHook,stations:stageStations,progress:stageProgress,common:stageCommon,explain:stageExplain,done:stageDone}[stage])();
-  sc.innerHTML=top+body; wireStage(stage);
+  sc.innerHTML=top+body;
+  restoreInputs();          // put back anything the student already typed/selected
+  wireStage(stage);
+  captureInputs();          // keep S.answers live as they type
+}
+/* Save every text box / checkbox value into S.answers as the student types. */
+function captureInputs(){
+  document.querySelectorAll('#screen textarea[id], #screen input[id]').forEach(function(elm){
+    if(elm.type==='checkbox'){
+      elm.addEventListener('change',function(){ S.answers[elm.id]=elm.checked; });
+    } else if(elm.type!=='button'){
+      var h=function(){ S.answers[elm.id]=elm.value; };
+      elm.addEventListener('input',h); elm.addEventListener('change',h);
+    }
+  });
+}
+/* Restore text boxes, checkboxes, and selected MCQ/multi options after a re-render. */
+function restoreInputs(){
+  document.querySelectorAll('#screen textarea[id], #screen input[id]').forEach(function(elm){
+    if(!(elm.id in S.answers)) return;
+    if(elm.type==='checkbox'){
+      elm.checked=!!S.answers[elm.id];
+      var lab=elm.closest('.nbtask'); if(lab) lab.classList.toggle('checked',elm.checked);
+    } else {
+      elm.value=S.answers[elm.id];
+    }
+  });
+  // re-apply chosen options (qi may be a real question index, or '0' for standalone choices with no data-qi)
+  for(var cls in S.picks){
+    var byQ=S.picks[cls];
+    for(var qi in byQ){
+      byQ[qi].forEach(function(oi){
+        var b=document.querySelector('.'+cls+'[data-qi="'+qi+'"][data-oi="'+oi+'"]');
+        if(!b) b=document.querySelector('.'+cls+':not([data-qi])[data-oi="'+oi+'"]');
+        if(b){ b.classList.add('sel'); var k=b.querySelector('.k'); if(k&&b.classList.contains('multi')) k.innerHTML='&#9745;'; }
+      });
+    }
+  }
+}
+function recordPick(cls,qi,oi,multi){
+  S.picks[cls]=S.picks[cls]||{};
+  if(multi){
+    var arr=S.picks[cls][qi]||[]; var i=arr.indexOf(oi);
+    if(i>=0) arr.splice(i,1); else arr.push(oi);
+    S.picks[cls][qi]=arr;
+  } else {
+    S.picks[cls][qi]=[oi];
+  }
 }
 function stageWait(){
   var nextName=STAGE_LABEL[STAGES[Math.min(S.stageIndex+1,STAGES.length-1)]];
@@ -856,10 +907,26 @@ function stageHook(){
   '<div class="slide-body"><span class="stage-pill">Big idea</span>'+
   '<div class="story"><p style="font-size:1.02rem">'+esc(HOOK.quote)+'</p></div>'+
   '<p style="font-weight:700">'+esc(HOOK.prompt)+'</p>'+
-  '<textarea class="in" id="hookWrite" placeholder="What can we learn from this?"></textarea>'+
+  notebookTask('hk','Write your answer in your notebook, then tick the box.')+
   '<details class="qa"><summary>Expected response</summary><div class="qa-a">'+esc(HOOK.esr)+'</div></details>'+
-  '<div class="btn-row"><span class="sp"></span><button class="btn" id="hkNext">Next &#8594;</button></div>'+
+  '<div class="btn-row"><span class="sp"></span><button class="btn" id="hkNext" disabled>Next &#8594;</button></div>'+
   '<img class="crest" src="'+LOGO+'" alt=""></div></div>';
+}
+/* ---- "record in your notebook, then tick" task. id prefixes the checkbox;
+   the Next button (id+"Next") stays disabled until the box is ticked. ---- */
+function notebookTask(id,label){
+  return '<label class="nbtask" for="'+id+'Done"><input type="checkbox" id="'+id+'Done">'+
+    '<span class="nb-ic">&#9998;</span><span class="nb-txt"><b>In your notebook:</b> '+esc(label)+'</span></label>';
+}
+function wireNotebookTask(id){
+  var cb=el(id+'Done'), nx=el(id+'Next');
+  if(cb){
+    if(nx) nx.disabled=!cb.checked;   // restore Next state if the box was already ticked
+    cb.addEventListener('change',function(){
+      if(nx) nx.disabled=!cb.checked;
+      var lab=cb.closest('.nbtask'); if(lab) lab.classList.toggle('checked',cb.checked);
+    });
+  }
 }
 
 /* ===== STATIONS (We Do) ===== */
@@ -950,18 +1017,25 @@ function stageDone(){
 function restartStudent(){S.studentId=null;S.placed=false;S.stageIndex=0;S.stageScores={};S.preScore=null;S.lowTestFlag=false;go('');}
 
 /* ===================== WIRING ===================== */
+function clsOf(btn){ return ['pre-opt','rec-opt','cfu-opt','pc-opt','pcm-opt'].filter(function(c){return btn.classList.contains(c);})[0]||''; }
 function selWire(){
   document.querySelectorAll('.choice').forEach(function(btn){
+    if(btn.disabled||btn.classList.contains('locked')) return;
     btn.addEventListener('click',function(){
+      var cls=clsOf(btn);
+      var qi=btn.getAttribute('data-qi'); var qkey=(qi!=null?qi:'0');
+      var oi=parseInt(btn.getAttribute('data-oi'),10);
       var q=btn.closest('.qblock');
       var multi = q && q.getAttribute('data-multi')==='1';
-      if(multi){ btn.classList.toggle('sel'); var k=btn.querySelector('.k'); if(k) k.innerHTML=btn.classList.contains('sel')?'&#9745;':'&#9744;'; return; }
+      if(multi){
+        btn.classList.toggle('sel'); var k=btn.querySelector('.k'); if(k) k.innerHTML=btn.classList.contains('sel')?'&#9745;':'&#9744;';
+        recordPick(cls,qkey,oi,true); return;
+      }
       // single-select: clear siblings in the same question (or same class group for standalone choices)
-      var qi=btn.getAttribute('data-qi');
-      var cls=['pre-opt','rec-opt','cfu-opt','pc-opt','pcm-opt'].filter(function(c){return btn.classList.contains(c);})[0]||'';
       var scope=(qi!=null)?('.'+cls+'[data-qi="'+qi+'"]'):('.'+cls);
       document.querySelectorAll(scope).forEach(function(b){b.classList.remove('sel');});
       btn.classList.add('sel');
+      recordPick(cls,qkey,oi,false);
     });
   });
 }
@@ -1005,7 +1079,7 @@ function wireStage(stage){
   if(stage==='spoilage'){ el('spNext').addEventListener('click',adv); }
   if(stage==='outcome1'){ el('o1Next').addEventListener('click',adv); }
   if(stage==='outcome2'){ el('o2Next').addEventListener('click',adv); }
-  if(stage==='hook'){ el('hkNext').addEventListener('click',function(){saveStudent({hook:val('hookWrite')});advance();}); }
+  if(stage==='hook'){ wireNotebookTask('hk'); el('hkNext').addEventListener('click',function(){saveStudent({hookDone:!!(el('hkDone')&&el('hkDone').checked)});advance();}); }
 
   if(stage==='cfu'){
     el('cfuCheck').addEventListener('click',function(){
