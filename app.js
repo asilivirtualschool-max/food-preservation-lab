@@ -997,3 +997,7 @@ function advance(){
   S.stageIndex=target; S.waiting=false; saveStudent(); window.scrollTo({top:0,behavior:'smooth'}); render();
 }
 
+
+/* ---------------- boot ---------------- */
+(function(){var bl=el('brandLogo');if(bl)bl.src=LOGO;})();
+initFirebase().then(function(){ render(); });
