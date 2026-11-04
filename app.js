@@ -179,6 +179,30 @@ var TECH_SUPPORT=[
   ["Boiling / Pasteurisation","Uses HEAT to kill microbes already in the food (e.g. milk)."]
 ];
 
+/* ----- CASE STUDY: Water Activity & Food Preservation (after the certificate) -----
+   Source: nutritionmeetsfoodscience.com/2022/08/29/water-activity-and-food-preservation/
+   Worksheet "Table 1: Water in food" + bar-chart questions. ----- */
+var CASE={
+  intro:[
+    "<b>Water content</b> is ALL the water in a food. But microbes can only use the <b>free</b> water — and that is measured by <b>water activity (a<sub>w</sub>)</b>.",
+    "a<sub>w</sub> runs from <b>0 to 1</b> (pure water = 1). The lower the water activity, the harder it is for microbes to grow.",
+    "Below about <b>a<sub>w</sub> 0.60, almost no microbes can grow at all.</b> So a food can still feel a bit moist but be safe — what matters is the <i>free</i> water, not the total water.",
+    "This is why <b>drying, salting and sugaring</b> work: they lower the water activity by removing free water or binding it up, even if some water is still there."
+  ],
+  table:[
+    ["Macaroni",10,0.45],["Fresh meat",70,0.985],["Dried vegetables",5,0.2],["Rice",16,0.8],
+    ["Breakfast cereal",5,0.2],["Bread",40,0.86],["Biscuits",5,0.2],["Milk",3.5,0.11],
+    ["Marmalade",35,0.86],["Toffee",8,0.6],["Nuts",18,0.65],["Potato crisps",1.5,0.08]
+  ],
+  // quick check grounded in the table
+  check:{
+    q:"Using water activity, which food would microbes find HARDEST to grow in?",
+    options:["Fresh meat (a_w 0.985)","Bread (a_w 0.86)","Potato crisps (a_w 0.08)","Rice (a_w 0.8)"],answer:2,
+    feedback:"<b>Potato crisps (0.08)</b> — the lowest water activity, so the least free water for microbes. Fresh meat (0.985) is the easiest to spoil."
+  },
+  surprise:"Notice: a food can have a LOW water content but it's the water ACTIVITY that decides spoilage. (A tiny drop in a_w — e.g. 0.955 → 0.95 — can shrink a microbe by ~45%!) Moisture also moves from high‑a_w to low‑a_w, which is why biscuits go soft in humid air."
+};
+
 /* ----- PUSH-YOURSELF quiz: pass to earn the Challenge badge (then Go tasks show everywhere) ----- */
 var PUSH_QUIZ=[
   {q:"Pickling in oil AND vinegar can remove more than one condition. Which TWO does it mainly affect?",
@@ -269,9 +293,9 @@ var S={role:null,code:null,name:null,studentId:null,tier:'steady',
    Both persist across re-renders (e.g. teacher pause/wait) so nothing is retyped. */
 
 /* FULL LESSON FLOW — follows the PPT order (Lesson 1 of 2) */
-var STAGES=['pretest','recap','spoilage','outcome1','cfu','outcome2','hook','stations','common','explain','done'];
+var STAGES=['pretest','recap','spoilage','outcome1','cfu','outcome2','hook','stations','common','explain','done','casestudy'];
 var STAGE_LABEL={pretest:'Pre-test',recap:'Recall',spoilage:'Food Spoilage',outcome1:'Outcome 1',cfu:'Check Understanding',
-  outcome2:'Outcome 2',hook:'Hook',stations:'Stations',common:'What’s in Common',explain:'Explain the Science',done:'Finished'};
+  outcome2:'Outcome 2',hook:'Hook',stations:'Stations',common:'What’s in Common',explain:'Explain the Science',done:'Finished',casestudy:'Case Study'};
 
 /* READY / STEADY / GO — ready = most supported entry, go = challenge */
 var TIERS=['ready','steady','go'];
@@ -536,7 +560,7 @@ function presentMove(dir){
 }
 function presentStageHTML(stage){
   var fn={recap:stageRecap,spoilage:stageSpoilage,outcome1:stageOutcome1,cfu:stageCFU,
-    outcome2:stageOutcome2,hook:stageHook,stations:stageStations,common:stageCommon,explain:stageExplain}[stage];
+    outcome2:stageOutcome2,hook:stageHook,stations:stageStations,common:stageCommon,explain:stageExplain,casestudy:stageCaseStudy}[stage];
   return fn?fn():'<div class="slide"><div class="slide-body"><p>'+esc(STAGE_LABEL[stage])+'</p></div></div>';
 }
 
@@ -836,7 +860,7 @@ function renderStage(sc){
     sc.innerHTML=top+stageWait(); return;
   }
   var body=({pretest:stagePretest,recap:stageRecap,spoilage:stageSpoilage,outcome1:stageOutcome1,cfu:stageCFU,
-    outcome2:stageOutcome2,hook:stageHook,stations:stageStations,common:stageCommon,explain:stageExplain,done:stageDone}[stage])();
+    outcome2:stageOutcome2,hook:stageHook,stations:stageStations,common:stageCommon,explain:stageExplain,done:stageDone,casestudy:stageCaseStudy}[stage])();
   sc.innerHTML=top+body;
   restoreInputs();          // put back anything the student already typed/selected
   wireStage(stage);
@@ -1189,7 +1213,8 @@ function stageDone(){
   '<div class="slide-body"><span class="stage-pill">Well done, '+esc(S.name)+'!</span>'+
   '<p>Here is your <b>Preservation Science</b> certificate — styled like a food label. Print it or save it as a PDF for your book.</p>'+
   certificateHTML()+
-  '<div class="btn-row"><button class="btn" id="printCert">🖨️ Print / Save PDF</button><button class="btn ghost" onclick="restartStudent()">Back to start</button></div>'+
+  '<div class="btn-row"><button class="btn" id="printCert">🖨️ Print / Save PDF</button><span class="sp"></span><button class="btn sky" id="toCase">Continue: Case Study →</button></div>'+
+  '<p class="muted" style="font-size:.85rem;margin-top:10px">One more challenge — explore real food labels and the science of <b>water activity</b>.</p>'+
   '</div></div>';
 }
 /* The food-label certificate. OMAN = Optimum temperature, Moisture, Air, Nutrients. */
@@ -1228,6 +1253,43 @@ function certificateHTML(){
   '</div>';
 }
 function restartStudent(){S.studentId=null;S.placed=false;S.stageIndex=0;S.stageScores={};S.preScore=null;S.lowTestFlag=false;S.answers={};S.picks={};S.badge=false;go('');}
+
+/* ===== CASE STUDY — Water Activity & Food Preservation ===== */
+function stageCaseStudy(){
+  var intro=CASE.intro.map(function(p){return '<p>'+p+'</p>';}).join('');
+  // Table 1
+  var sorted=CASE.table.slice();
+  var maxWC=Math.max.apply(null,CASE.table.map(function(r){return r[1];}));
+  var tableRows=CASE.table.map(function(r){
+    var awSafe=r[2]<0.60; var awMid=r[2]>=0.60&&r[2]<=0.85;
+    var band=awSafe?'aw-safe':awMid?'aw-mid':'aw-high';
+    return '<tr><td>'+esc(r[0])+'</td><td class="tnum">'+r[1]+'</td>'+
+      '<td class="tnum '+band+'">'+r[2]+'</td>'+
+      '<td><span class="awbar '+band+'" style="width:'+Math.round(r[2]*100)+'%"></span></td></tr>';
+  }).join('');
+  var table='<div style="overflow-x:auto"><table class="ctable awtbl"><tr><th>Food</th><th>Water content (%)</th><th>Water activity (a<sub>w</sub>)</th><th>a<sub>w</sub> scale</th></tr>'+tableRows+'</table></div>'+
+    '<div class="aw-key"><span class="aw-chip aw-safe">a_w &lt; 0.60 — microbes can’t grow</span><span class="aw-chip aw-mid">0.60–0.85 — some can</span><span class="aw-chip aw-high">&gt; 0.85 — easy to spoil</span></div>';
+  // worksheet tasks (draw a bar chart + questions) → notebook
+  var qTasks=
+    notebookTask('csChart','Draw a bar chart of the water content AND water activity of each food.')+
+    '<label class="fld">Using your bar chart, answer in your notebook:</label>'+
+    notebookTask('csQ1','Which TWO foods are the HARDEST for microbes to grow in? (lowest a_w)')+
+    notebookTask('csQ2','Which TWO foods are the EASIEST for microbes to grow in? (highest a_w)')+
+    notebookTask('csQ3','Does anything surprise you? (compare water content vs water activity)');
+  // quick check
+  var check='<p style="font-weight:700;margin-top:14px">'+esc(CASE.check.q)+'</p>'+
+    (function(){var order=shuffledOrder(CASE.check,'cs');return '<div class="choices">'+order.map(function(oi,pos){return '<button type="button" class="choice cs-opt" data-oi="'+oi+'"><span class="k">'+String.fromCharCode(65+pos)+'</span><span>'+esc(CASE.check.options[oi])+'</span></button>';}).join('')+'</div>';})()+
+    '<button class="btn" id="csCheck">Check</button><div class="fb" id="csFb"></div>';
+  return '<div class="slide"><div class="slide-head magenta2"><span class="gem">&#128300;</span><h2>Case Study — Water Activity</h2></div>'+
+  '<div class="slide-body"><span class="stage-pill">Real food labels · going deeper</span>'+
+  intro+
+  '<details class="qa"><summary>Surprising science</summary><div class="qa-a">'+esc(CASE.surprise)+'</div></details>'+
+  '<h4 style="margin:14px 0 6px;color:var(--navy)">Table 1: Water in food</h4>'+table+
+  qTasks+check+
+  '<div class="btn-row" id="csNextRow" style="display:none;margin-top:16px"><span class="sp"></span><button class="btn" id="csFinish">Finish ✓</button></div>'+
+  '<img class="crest" src="'+LOGO+'" alt=""></div></div>';
+}
+
 function printCertificate(){
   var cert=el('cert'); if(!cert) return;
   var css='body{font-family:Arial,Helvetica,sans-serif;margin:0;padding:24px;background:#fff;color:#111}'+
@@ -1252,7 +1314,7 @@ function printCertificate(){
 }
 
 /* ===================== WIRING ===================== */
-function clsOf(btn){ return ['pre-opt','rec-opt','cfu-opt','pc-opt','pcm-opt','tech-opt'].filter(function(c){return btn.classList.contains(c);})[0]||''; }
+function clsOf(btn){ return ['pre-opt','rec-opt','cfu-opt','pc-opt','pcm-opt','tech-opt','cs-opt'].filter(function(c){return btn.classList.contains(c);})[0]||''; }
 /* show a thumbnail when a photo is chosen (kept in-memory only; not uploaded anywhere) */
 function wirePhoto(inputId,prevId){
   var inp=el(inputId), prev=el(prevId); if(!inp||!prev) return;
@@ -1368,6 +1430,31 @@ function wireStage(stage){
 
   if(stage==='done'){
     if(el('printCert')) el('printCert').addEventListener('click',printCertificate);
+    if(el('toCase')) el('toCase').addEventListener('click',adv);
+  }
+
+  if(stage==='casestudy'){
+    STATIONS; // no-op
+    ['csChart','csQ1','csQ2','csQ3'].forEach(function(id){ wireNotebookTask(id); });
+    el('csCheck').addEventListener('click',function(){
+      var sel=document.querySelector('.cs-opt.sel'),f=el('csFb');
+      if(!sel){f.className='fb show no';f.textContent='Pick an answer first.';return;}
+      document.querySelectorAll('.cs-opt').forEach(function(b){var oi=parseInt(b.getAttribute('data-oi'),10);if(oi===CASE.check.answer)b.classList.add('correct');else if(b.classList.contains('sel'))b.classList.add('wrong');});
+      var ok=parseInt(sel.getAttribute('data-oi'),10)===CASE.check.answer;
+      S.stageScores.casestudy=ok?1:0;
+      f.className='fb show ok';f.innerHTML='<b>'+(ok?'Correct!':'Good try.')+'</b> '+CASE.check.feedback;
+      el('csNextRow').style.display='flex'; saveStudent();
+    });
+    el('csFinish').addEventListener('click',function(){
+      S.stageScores.caseDone=true; saveStudent();
+      el('screen').innerHTML='<div class="slide"><div class="slide-head teal"><span class="gem">&#9733;</span><h2>All done!</h2></div>'+
+        '<div class="slide-body" style="text-align:center;padding-bottom:36px"><div style="font-size:2.6rem">&#127881;</div>'+
+        '<p class="inquiry" style="margin:4px auto 6px;max-width:34ch">Fantastic work, '+esc(S.name)+' — you’ve completed the lesson and the water‑activity case study.</p>'+
+        '<p class="muted">You can reprint your certificate or head back to the start.</p>'+
+        '<div class="btn-row" style="justify-content:center"><button class="btn" onclick="S.stageIndex=STAGES.indexOf(\'done\');render();">◀ Back to certificate</button><button class="btn ghost" onclick="restartStudent()">Back to start</button></div>'+
+        '<img class="crest" src="'+LOGO+'" alt=""></div></div>';
+      window.scrollTo({top:0,behavior:'smooth'});
+    });
   }
 
   if(stage==='explain'){
