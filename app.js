@@ -359,9 +359,11 @@ function subscribeMeta(code){
       var m=d.exists?(d.data()||{}):{};
       S.paced = !!m.paced;
       S.releasedIndex = (typeof m.releasedIndex==='number') ? m.releasedIndex : (STAGES.length-1);
-      // If the student is on the wait screen and the gate has opened, move them on.
-      if(S.waiting && (!S.paced || S.stageIndex <= S.releasedIndex)){
-        S.waiting=false; render();
+      // If the student is on the wait screen and the gate has opened, actually move them
+      // to the next stage (clearing waiting alone would just re-show the stage they finished).
+      if(S.waiting){
+        var target=Math.min(S.stageIndex+1,STAGES.length-1);
+        if(gateAllows(target)){ S.stageIndex=target; S.waiting=false; saveStudent(); render(); }
       }
     });
   }catch(e){}
@@ -918,7 +920,20 @@ function stageWait(){
     '<p class="inquiry" style="margin:0 auto 6px;max-width:30ch">Well done, '+esc(S.name)+' — you’ve finished this part.</p>'+
     '<p class="muted">Waiting for your teacher to release <b>'+esc(nextName)+'</b>. This continues on its own — keep your eyes up front. &#9733;</p>'+
     '<div class="wait-dots"><span></span><span></span><span></span></div>'+
+    // troubleshooting escape hatch — if the gate is actually open, this moves them on
+    '<details class="qa" style="max-width:420px;margin:14px auto 0;text-align:left"><summary>Stuck here?</summary>'+
+    '<div class="qa-a">If your teacher has already moved the class on but you’re still waiting, tap the button below. If it still waits, your teacher hasn’t released the next part yet.'+
+    '<div class="btn-row" style="justify-content:center;margin-top:10px"><button class="btn" onclick="tryContinue()">↻ Try to continue</button></div></div></details>'+
     '<img class="crest" src="'+LOGO+'" alt=""></div></div>';
+}
+/* Manual recovery from the wait screen: re-check the gate and move on if it’s open. */
+function tryContinue(){
+  var target=Math.min(S.stageIndex+1,STAGES.length-1);
+  if(gateAllows(target)){ S.stageIndex=target; S.waiting=false; saveStudent(); render(); }
+  else { // still paced — re-sync from the database in case the snapshot was missed, then refresh
+    if(fdb&&S.code){ subscribeMeta(S.code); }
+    render();
+  }
 }
 
 /* ---- tier picker overlay. advanceAfter=true (after the pre-test) moves the student
@@ -1469,7 +1484,10 @@ function wireStage(stage){
 function val(id){var e=el(id);return e?(e.value||'').trim():'';}
 function advance(){
   var target=Math.min(S.stageIndex+1,STAGES.length-1);
-  if(!gateAllows(target)){ S.waiting=true; saveStudent(); window.scrollTo({top:0,behavior:'smooth'}); render(); return; }
+  // The pre-test is pre-lesson setup (placement). Never trap a student there on the pacing
+  // gate — always let them reach the first teaching stage. Pacing applies from then on.
+  var leavingPretest = STAGES[S.stageIndex]==='pretest';
+  if(!leavingPretest && !gateAllows(target)){ S.waiting=true; saveStudent(); window.scrollTo({top:0,behavior:'smooth'}); render(); return; }
   S.stageIndex=target; S.waiting=false; saveStudent(); window.scrollTo({top:0,behavior:'smooth'}); render();
 }
 
